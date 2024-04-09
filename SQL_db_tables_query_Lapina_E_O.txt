@@ -1,0 +1,220 @@
+-- создание БД
+drop database if exists kadry_data;
+create database kadry_data;
+use kadry_data;
+
+/*Поскольку уникальный идентификатор работника в таблицах повторяется и по сути дублирует фамилию сотрудника, 
+ то лучше было бы создать отдельную таблицу работников, где этот идентификатор 
+ будет уникальным первичным ключом. В таком случае во всех таблицах
+ можно было бы обойтись ссылкой на внешний ключ - идентификатор сотрудника без его фамилии.
+ Это в большей степени будет соответствовать принципам реляционных баз данных.
+ Исходя из того, что таблицы Кадры, Образование и Статус судя по содержанию относятся к единой базе данных,
+ следует изменить структуру таблиц (если только каждая из таблиц не является представлением и содержит запрос к уже сформированной
+ с правильными связями СУБД), установить связь один ко многим с единой таблицей Сотрудники.
+ Решение задач осуществлено с учетом имеющейся системы (без связей, первичных и вторичных ключей).
+ Формат даты в PostgreSql поддерживается yyyy.mm.dd. Мы использовали его при постоении таблиц и создании запросов.*/
+
+
+-- Создание таблицы
+
+drop table if exists Kadry;
+create table Kadry(
+	id bigint not null,
+	full_name varchar(50),
+	period date,
+	post varchar (50)
+);
+insert into Kadry(id,
+	full_name,
+	period,
+	post)
+values (1, 'Иванов', '2020.01.05', 'Аналитик'),
+(1, 'Иванов', '2021.02.17', 'Старший аналитик'),
+(1, 'Иванов', '2023.02.07', 'Ведущий аналитик'),
+(2, 'Петров', '2020.01.01', 'Специалист'),
+(2, 'Петров', '2021.04.02', 'Старший специалист'),
+(2, 'Петров', '2022.05.06', 'Помощник инженера'),
+(2, 'Петров', '2023.01.10', 'Инженер'),
+(2, 'Петров', '2023.01.20', 'Старший инженер');
+
+SELECT * from Kadry;
+
+/*Задание 1
+
+    Необходимо написать SQL запрос для СУБД PostgreSQL, который из данной таблицы выведет уникальный список работников, соответствующий срезу последних на выбранную дату среза, указываемую параметром пользователем, по следующим полям:
+        ◦ full_name
+        ◦ period
+        ◦ post*/
+
+set @param = '2023.02.15'; -- устанавливаем параметр
+
+select 
+k.full_name, period, post 
+from
+(select id, full_name, MAX(period) as max_period from Kadry where period <= @param group by id, full_name) as k_max
+join 
+(select id, full_name, period, post from Kadry group by id, full_name, period, post) as k
+ on k.id = k_max.id and k.full_name = k_max.full_name and k.period = k_max.max_period; 
+ /* Для k делаем группировку для уникального списка id, имя,  дата, должность 
+  * в случае, если в таблице будет содержаться еще информация и эти строки 
+  * будут не уникальными.  Для исключения ситуации, когда на предприятии 
+  * несколько сотрудников с одинаковой фамилией следует также внести 
+  * id сотрудника в данный запрос.
+  * Поскольку в приведенном примере результата столбца id нет, предполагаем,
+  * что для условий данной задачи фамилия является уникальным идентификатором сотрудника.
+ */
+ 
+ set @param = '2023.01.01'; -- устанавливаем параметр
+
+ select k.full_name, period, post 
+from
+(select id, full_name, MAX(period) as max_period from Kadry where period <= @param group by id, full_name) as k_max
+join 
+(select id, full_name, period, post from Kadry group by id, full_name, period, post) as k
+ on k.id = k_max.id and k.full_name = k_max.full_name and k.period = k_max.max_period; 
+
+
+ 
+ /*Задание 2
+     Необходимо написать SQL запрос для СУБД PostgreSQL, который из данной таблицы выведет уникальный список работников, соответствующий срезу, предшествующему срезу последних на выбранную дату среза, указываемую параметром пользователем, по следующим полям:
+        ◦ full_name
+        ◦ period
+        ◦ post*/
+
+set @param = '2023.02.15'; -- устанавливаем параметр
+
+select k.full_name, period, post 
+from
+(select id, full_name, max(lag_period) as max_lag_period from
+(select  id, full_name, lag(period) 
+over (partition by full_name order by period) as lag_period 
+from Kadry where period <= @param) as lag_t group by id, full_name) as lag_max_t
+join 
+(select id, full_name, period, post from Kadry group by id, full_name, period, post) as k
+ on k.id = lag_max_t.id and k.full_name = lag_max_t.full_name and k.period = lag_max_t.max_lag_period; 
+ 
+/*Задание 3
+Необходимо написать SQL запрос для СУБД PostgreSQL, который из данной таблицы выведет уникальный список работников, которые не имеют никакого образования (ни высшего, ни среднего профессионального), кроме среднего (полного) общего образования, и получают впервые высшее образование (продолжают в настоящее время обучаться) по полям, указанным в таблице.*/
+
+/*Поскольку уникальный идентификатор работника в таблицах повторяется и по сути дублирует фамилию сотрудника, 
+ то лучше было бы создать отдельную таблицу работников, где этот идентификатор 
+ будет уникальным первичным ключом. В таком случае во всех таблицах
+ можно было бы обойтись ссылкой на внешний ключ - идентификатор сотрудника без его фамилии. И потом уже в запросах 
+ применять join для соединения информации из таблиц.
+ Это в большей степени будет соответствовать принципам реляционных баз данных и эффективного хранения информации.
+ Исходя из того, что таблицы Кадры, Образование и Статус судя по содержанию относятся к единой базе данных,
+ следует изменить структуру таблиц (если только каждая из таблиц не является представлением и содержит запрос к уже сформированной
+ с правильными связями СУБД), установить связь один ко многим с единой таблицей Сотрудники.
+ Решение задач осуществлено с учетом имеющейся системы (без связей, первичных и вторичных ключей).
+ Формат даты в PostgreSql поддерживается yyyy.mm.dd. Мы использовали его при постоении таблиц и создании запросов.*/
+
+/*В таблице Образование видимо есть фактическая неточность, сотрудник Петров одновременно имеет две записи о получении 
+ среднего профессионального образования по специальности "Аналитик" с двумя статусами "завершено" или "продолжается". 
+ Необходимо либо удалить устаревшую запись, либо в этой таблице также вести учет даты, на которую этот образовательный статус имеется.*/
+
+/*Контекст. Имеется таблица «Education» (образование работников): 
+    • уникальный идентификатор работника (id);
+    • ФИО (full_name);
+    • тип образования (education_type);
+    • специальность (specialty);
+    • завершенность обучения (completion_training);
+    • курс (kurs).*/    
+    
+    
+use kadry_data;
+
+-- создание таблицы
+
+drop table if exists Education;
+create table Education(
+	id bigint not null,
+	full_name varchar(50),
+	education_type enum ('Среднее профессиональное', 'Высшее', 'Среднее (полное) общее образование'),
+	speciality varchar(50),
+	completion_training enum ('продолжается', 'завершено'),
+	kurs tinyint
+);
+
+insert into Education(
+	id, full_name, education_type, speciality , completion_training, kurs)
+values 
+(1, 'Иванов', 'Среднее профессиональное', 'Аналитик', 'завершено', Null),
+(1, 'Иванов', 'Высшее', 'Финансы и кредит', 'завершено', Null),
+(1, 'Иванов', 'Высшее', 'Бухгалтерский учет и финансы', 'продолжается', 2),
+(1, 'Иванов', 'Среднее (полное) общее образование', Null, 'завершено', Null),
+(2, 'Петров', 'Среднее профессиональное', 'Менеджмент', 'завершено', Null),
+(2, 'Петров', 'Среднее профессиональное', 'Аналитик', 'завершено', Null),
+(2, 'Петров', 'Среднее профессиональное', 'Аналитик', 'продолжается', 3),
+(3, 'Сидоров', 'Высшее', 'Бухгалтерский учет и финансы', 'продолжается', 2),
+(3, 'Сидоров', 'Среднее (полное) общее образование', Null, 'завершено', Null),
+(4, 'Черевков', 'Высшее', 'Финансы и кредит', 'завершено', Null);
+
+select * from Education; -- проверка таблицы
+
+/* Задание 3. Запрос */
+select full_name, education_type, speciality, completion_training, kurs from Education
+where full_name in (select full_name from Education where education_type = 'Высшее' and completion_training = 'продолжается')
+and full_name not in (select full_name from Education where education_type = 'Высшее' and completion_training = 'завершено')
+and full_name not in (select full_name from Education where education_type = 'Среднее профессиональное' and completion_training = 'завершено')
+and full_name in (select full_name from Education where education_type = 'Среднее (полное) общее образование' and completion_training = 'завершено')
+and education_type = 'Высшее';
+
+
+/* Задание 4
+
+Контекст. Имеется таблица «Status» (статус работников): 
+    • уникальный идентификатор работника (id);
+    • ФИО (full_name);
+    • статус (status);
+    • дата начала статуса (date_star).*/
+
+    
+    
+use kadry_data;
+
+-- создание таблицы 
+
+drop table if exists Status;
+create table Status(
+	id bigint not null,
+	full_name varchar(50),
+	status enum ('работает', 'в отпуске', 'на больничном', 'уволен'),
+	date_star datetime
+);
+
+insert into Status(id,
+	full_name,
+	status,
+	date_star)
+values 
+(1, 'Иванов', 'работает', '2022.01.10'),
+(1, 'Иванов', 'в отпуске', '2022.07.15'),
+(1, 'Иванов', 'в отпуске', '2022.07.25'),
+(1, 'Иванов', 'работает', '2022.08.01'),
+(1, 'Иванов', 'на больничном', '2022.09.02'),
+(1, 'Иванов', 'на больничном', '2022.09.10'),
+(1, 'Иванов', 'на больничном', '2022.09.15'),
+(1, 'Иванов', 'работает', '2022.09.20'),
+(1, 'Иванов', 'уволен', '2022.10.01');
+
+select * from Status; -- проверка правильности внесения данных
+
+/*    4. Необходимо написать SQL запрос для СУБД PostgreSQL, 
+ который из данной таблицы выведет список работников по периодам действия статусов, по полям, указанным в таблице.*/
+
+/* В результате этого запроса в задании ОШИБКА. Иванов в таблице ушел в отпуск 15.07.2022, а в результате запроса стоит 15.01.2022!*/ 
+
+
+select full_name, status, date_star, date_end from
+(select full_name, status, next_status, date_star, date_end, lag(date_end + INTERVAL 1 SECOND) over() date_star_interval  
+from (select full_name, status, date_star, lead(status) OVER (ORDER BY date_star) as next_status, lead(date_star - INTERVAL 1 SECOND) over() date_end  
+ from Status) time_table_1 where status != next_status or next_status is NULL) time_table_2 where date_star_interval is NULL
+UNION 
+select full_name, status, date_star_interval date_star, date_end from
+(select full_name, status, next_status, date_star, date_end, lag(date_end + INTERVAL 1 SECOND) over() date_star_interval  
+from (select full_name, status, date_star, lead(status) OVER (ORDER BY date_star) as next_status, lead(date_star - INTERVAL 1 SECOND) over() date_end  
+ from Status) time_table_1 where status != next_status or next_status is NULL) time_table_2 where date_star_interval is not NULL;
+
+
+
+
